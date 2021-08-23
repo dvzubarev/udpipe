@@ -63,7 +63,7 @@ class gru_tokenizer_network_trainer : public gru_tokenizer_network_implementatio
 
   struct f1_info { double precision, recall, f1; };
   void evaluate(unsigned url_email_tokenizer, unsigned segment, bool allow_spaces, const vector<tokenized_sentence>& heldout,
-                f1_info& tokens_f1, f1_info& sentences_f1);
+                f1_info& tokens_f1);
   void evaluate_f1(const vector<token_range>& system, const vector<token_range>& gold, f1_info& f1);
 
   template <int R, int C> void random_matrix(matrix<R,C>& m, mt19937& generator, float range, float bias);
@@ -117,7 +117,7 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
   vector<matrix_trainer<1, D>*> chosen_embeddings(segment);
   vector<matrix<1, D>> embedding_dropouts(segment);
   gru_trainer gru_fwd(this->gru_fwd, segment), gru_bwd(this->gru_bwd, segment);
-  matrix_trainer<3, D> projection_fwd(this->projection_fwd), projection_bwd(this->projection_bwd);
+  matrix_trainer<this->OUT_N, D> projection_fwd(this->projection_fwd), projection_bwd(this->projection_bwd);
   float learning_rate = learning_rate_initial, b1t = 1.f, b2t = 1.f;
 
   float best_combined_f1 = 0.f; unsigned best_combined_f1_epoch = 0;
@@ -149,7 +149,7 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
           }
           for (size_t i = 0; i < sentence.tokens.size(); i++)
             training_output[training_offset + sentence.tokens[i].start + sentence.tokens[i].length - 1].outcome =
-                i+1 < sentence.tokens.size() ? gru_tokenizer_network::END_OF_TOKEN : gru_tokenizer_network::END_OF_SENTENCE;
+                gru_tokenizer_network::END_OF_TOKEN;
         }
         training_offset = 0;
       }
@@ -167,7 +167,7 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
         chosen_embeddings[i] = &embeddings.at(instance_input[i].chr);
         for (unsigned k = 0; k < D; k++)
           embedding_dropouts[i].w[0][k] = dropout && dropout_distribution(generator) ? 0.f : dropout_multiplier;
-        for (int j = 0; j < 3; j++)
+        for (int j = 0; j < this->OUT_N; j++)
           instance_output[i].w[j] = projection_fwd.original.b[j];
       }
 
@@ -203,7 +203,7 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
           for (int j = 0; j < D; j++)
             gru.dropouts[i].w[0][j] = dropout && dropout_distribution(generator) ? 0.f : dropout_multiplier * gru.states[i+1].w[0][j];
 
-          for (int j = 0; j < 3; j++)
+          for (int j = 0; j < this->OUT_N; j++)
             for (int k = 0; k < D; k++)
               output.w[j] += projection.original.w[j][k] * gru.dropouts[i].w[0][k];
         }
@@ -211,11 +211,10 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
 
       for (auto&& output : instance_output) {
         int best = output.w[1] > output.w[0];
-        if (output.w[2] > output.w[best]) best = 2;
         float maximum = output.w[best], sum = 0;
-        for (int j = 0; j < 3; j++) sum += (output.w[j] = exp(output.w[j] - maximum));
+        for (int j = 0; j < this->OUT_N; j++) sum += (output.w[j] = exp(output.w[j] - maximum));
         sum = 1.f / sum;
-        for (int j = 0; j < 3; j++) output.w[j] *= sum;
+        for (int j = 0; j < this->OUT_N; j++) output.w[j] *= sum;
 
         total++;
         correct += best == output.outcome;
@@ -224,7 +223,7 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
 
       // Backward pass
       for (auto&& output : instance_output)
-        for (int j = 0; j < 3; j++)
+        for (int j = 0; j < this->OUT_N; j++)
           output.w[j] = (output.outcome == j) - output.w[j];
 
       for (int dir = 0; dir < 2; dir++) {
@@ -239,12 +238,12 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
           auto& output = instance_output[dir == 0 ? i : segment - 1 - i];
 
           for (int j = 0; j < D; j++) // These for cycles are swapped because
-            for (int k = 0; k < 3; k++) // g++-4.8 generates wrong code otherwise.
+            for (int k = 0; k < this->OUT_N; k++) // g++-4.8 generates wrong code otherwise.
               projection.w_g[k][j] += gru.dropouts[i].w[0][j] * output.w[k];
 
           for (int j = 0; j < D; j++)
             if (gru.dropouts[i].w[0][j])
-              for (int k = 0; k < 3; k++)
+              for (int k = 0; k < this->OUT_N; k++)
                 state_g.w[0][j] += projection.original.w[k][j] * output.w[k];
 
           resetstate_g.clear();
@@ -311,14 +310,13 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
     cerr << "Epoch " << epoch+1 << ", logprob: " << scientific << setprecision(4) << logprob
          << ", training acc: " << fixed << setprecision(2) << 100. * correct / double(total) << "%";
     if (!heldout.empty()) {
-      f1_info tokens, sentences;
-      evaluate(url_email_tokenizer, segment, allow_spaces, heldout, tokens, sentences);
+      f1_info tokens;
+      evaluate(url_email_tokenizer, segment, allow_spaces, heldout, tokens);
       cerr << ", heldout tokens: " << 100. * tokens.precision << "%P/" << 100. * tokens.recall << "%R/"
-           << 100. * tokens.f1 << "%, sentences: " << 100. * sentences.precision << "%P/"
-           << 100. * sentences.recall << "%R/" << 100. * sentences.f1 << "%";
+           << 100. * tokens.f1 << "%";
 
-      if (early_stopping && sentences.f1 + tokens.f1 > best_combined_f1) {
-        best_combined_f1 = sentences.f1 + tokens.f1;
+      if (early_stopping && tokens.f1 > best_combined_f1) {
+        best_combined_f1 = tokens.f1;
         best_combined_f1_epoch = epoch;
         best_combined_f1_network = *this;
       }
@@ -389,7 +387,7 @@ void gru_tokenizer_network_trainer<D>::gru_trainer::update_weights(float learnin
 
 template <int D>
 void gru_tokenizer_network_trainer<D>::evaluate(unsigned url_email_tokenizer, unsigned segment, bool allow_spaces, const vector<tokenized_sentence>& heldout,
-                                                f1_info& tokens_f1, f1_info& sentences_f1) {
+                                                f1_info& tokens_f1) {
   // Generate gold data
   vector<token_range> gold_sentences, gold_tokens;
   u32string text;
@@ -403,7 +401,7 @@ void gru_tokenizer_network_trainer<D>::evaluate(unsigned url_email_tokenizer, un
   }
 
   // Generate system data
-  vector<token_range> system_sentences, system_tokens, tokens;
+  vector<token_range> system_tokens, tokens;
   string text_utf8;
 
   this->cache_embeddings();
@@ -412,13 +410,10 @@ void gru_tokenizer_network_trainer<D>::evaluate(unsigned url_email_tokenizer, un
   tokenizer.set_text(text_utf8);
 
   while (tokenizer.next_sentence(tokens))
-    if (!tokens.empty()) {
-      system_sentences.emplace_back(tokens.front().start, tokens.back().start + tokens.back().length - tokens.front().start);
+    if (!tokens.empty())
       system_tokens.insert(system_tokens.end(), tokens.begin(), tokens.end());
-    }
 
   evaluate_f1(system_tokens, gold_tokens, tokens_f1);
-  evaluate_f1(system_sentences, gold_sentences, sentences_f1);
 }
 
 template <int D>

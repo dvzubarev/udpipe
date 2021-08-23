@@ -37,10 +37,12 @@ class gru_tokenizer_network {
     void load(binary_decoder& data);
   };
 
-  enum { NO_SPLIT, END_OF_TOKEN, END_OF_SENTENCE, OUTCOMES };
+
+  enum { NO_SPLIT, END_OF_TOKEN, OUTCOMES };
+  static constexpr int OUT_N = 2;
   struct outcome_t {
     int outcome;
-    float w[3];
+    float w[OUT_N];
     const float* embedding;
   };
   struct char_info {
@@ -81,7 +83,7 @@ class gru_tokenizer_network_implementation : public gru_tokenizer_network {
   unordered_map<char32_t, cached_embedding> embeddings;
   cached_embedding empty_embedding;
   gru gru_fwd, gru_bwd;
-  matrix<3, D> projection_fwd, projection_bwd;
+  matrix<2, D> projection_fwd, projection_bwd;
   unordered_map<unilib::unicode::category_t, char32_t> unknown_chars;
 };
 
@@ -139,7 +141,7 @@ void gru_tokenizer_network_implementation<D>::classify(const vector<char_info>& 
 
   // Clear outcome probabilities
   for (auto&& outcome : outcomes)
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < this->OUT_N; i++)
       outcome.w[i] = projection_fwd.b[i];
 
   // Perform forward & backward GRU
@@ -172,17 +174,15 @@ void gru_tokenizer_network_implementation<D>::classify(const vector<char_info>& 
         state.w[0][j] = update.w[0][j] * state.w[0][j] + (1.f - update.w[0][j]) * candidate.w[0][j];
       }
 
-      for (int j = 0; j < 3; j++)
+      for (int j = 0; j < this->OUT_N; j++)
         for (int k = 0; k < D; k++)
           outcome.w[j] += projection.w[j][k] * state.w[0][k];
     }
   }
 
   // Choose the outcome with the highest weight
-  for (auto&& outcome : outcomes) {
+  for (auto&& outcome : outcomes)
     outcome.outcome = outcome.w[1] > outcome.w[0];
-    if (outcome.w[2] > outcome.w[outcome.outcome]) outcome.outcome = 2;
-  }
 }
 
 template <int D>

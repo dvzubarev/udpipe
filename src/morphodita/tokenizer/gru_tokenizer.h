@@ -23,6 +23,7 @@ class gru_tokenizer : public unicode_tokenizer {
       : unicode_tokenizer(url_email_tokenizer), segment(segment), allow_spaces(allow_spaces), network_index(0), network_length(0), network(network) {}
 
   virtual bool next_sentence(vector<token_range>& tokens) override;
+  void tokens(vector<token_range>& tokens);
 
  private:
   inline bool is_space(size_t index);
