@@ -131,7 +131,7 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
     double logprob = 0;
     int total = 0, correct = 0;
 
-    for (int instance = 0, instances = 10000; instance < instances; instance++) {
+    for (int instance = 0, instances = 48000; instance < instances; instance++) {
       // Prepare input instance
       if (training_offset + segment >= training_input.size()) {
         shuffle(permutation.begin(), permutation.end(), generator);

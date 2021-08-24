@@ -121,10 +121,11 @@ int gru_tokenizer::next_outcome() {
     // Adjust network_length to suitable break
     if (network_length == segment && network_length >= 10) {
       network_length -= 5;
-      while (network_length > segment / 2)
-        if (network_outcomes[--network_length].outcome != gru_tokenizer_network::NO_SPLIT)
+      while (network_length > segment / 2){
+        if (network_outcomes[network_length-1].outcome != gru_tokenizer_network::NO_SPLIT)
           break;
-
+        --network_length;
+      }
 
     }
   }
