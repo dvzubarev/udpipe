@@ -127,11 +127,13 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
   vector<gru_tokenizer_network::char_info> training_input, instance_input(segment);
   vector<gru_tokenizer_network::outcome_t> training_output, instance_output(segment);
   vector<int> permutation; for (size_t i = 0; i < data.size(); i++) permutation.push_back(permutation.size());
+  int instances_per_epoch = 0.9 * data.size();
+  cerr<<"Instances per epoch: "<<instances_per_epoch<<std::endl;
   for (unsigned epoch = 0; epoch < epochs; epoch++) {
     double logprob = 0;
     int total = 0, correct = 0;
 
-    for (int instance = 0, instances = 0.9 * data.size(); instance < instances; instance++) {
+    for (int instance = 0; instance < instances_per_epoch; instance++) {
       // Prepare input instance
       if (training_offset + segment >= training_input.size()) {
         shuffle(permutation.begin(), permutation.end(), generator);
@@ -286,7 +288,7 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
 
       // Update the weights
       if (batch_size == 1 ||
-          instance+1 == instances ||
+          instance+1 == instances_per_epoch ||
           (instance+1) % batch_size == 0) {
         b1t *= 0.9f;
         b2t *= 0.999f;
@@ -328,6 +330,8 @@ bool gru_tokenizer_network_trainer<D>::train(unsigned url_email_tokenizer, unsig
       }
     }
     cerr << endl;
+    if(learning_rate_final)
+      cerr<<"learning rate: "<<learning_rate<<endl;
   }
 
   // Choose best network if desired

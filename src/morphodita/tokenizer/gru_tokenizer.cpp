@@ -17,6 +17,9 @@ bool gru_tokenizer::is_space(size_t index) {
   return (chars[index].cat & unilib::unicode::Zs) || chars[index].chr == '\r' || chars[index].chr == '\n' || chars[index].chr == '\t';
 }
 
+bool gru_tokenizer::is_ucat(size_t index, unilib::unicode::category_t cat){
+  return chars[index].cat & cat;
+}
 bool gru_tokenizer::next_sentence(vector<token_range>& tokens) {
   tokens.clear();
 
@@ -81,7 +84,7 @@ int gru_tokenizer::next_outcome() {
     network.classify(network_chars, network_outcomes);
 
     // Add spacing token/sentence breaks
-    for (size_t i = 0; i < network_length - 1; i++)
+    for (size_t i = 0; i < network_length - 1; i++){
       if (is_space(network_offsets[i+1])) {
         // Detect EOS on the following space or \n\n or \r\n\r\n, or if there is end of text
         bool eos = network_outcomes[i+1].outcome == gru_tokenizer_network::END_OF_SENTENCE;
@@ -96,6 +99,24 @@ int gru_tokenizer::next_outcome() {
           if (!allow_spaces || network_outcomes[i+1].outcome == gru_tokenizer_network::END_OF_TOKEN)
             network_outcomes[i].outcome = gru_tokenizer_network::END_OF_TOKEN;
       }
+      //also fix possible trailing or leading hyphens
+      if (i>0 && is_ucat(network_offsets[i], unilib::unicode::Pd) &&
+          is_ucat(network_offsets[i-1], unilib::unicode::Ll | unilib::unicode::Lu) &&
+          is_ucat(network_offsets[i+1], unilib::unicode::Ll | unilib::unicode::Lu)){
+
+        //trailing hyphen
+        if (network_outcomes[i].outcome == gru_tokenizer_network::END_OF_TOKEN &&
+            network_outcomes[i-1].outcome != gru_tokenizer_network::END_OF_TOKEN)
+          network_outcomes[i-1].outcome = gru_tokenizer_network::END_OF_TOKEN;
+
+        //leading hyphen
+        if (network_outcomes[i].outcome != gru_tokenizer_network::END_OF_TOKEN &&
+            network_outcomes[i-1].outcome == gru_tokenizer_network::END_OF_TOKEN)
+          network_outcomes[i].outcome = gru_tokenizer_network::END_OF_TOKEN;
+      }
+
+    }
+
 
     // Adjust network_length to suitable break
     if (network_length == segment && network_length >= 10) {

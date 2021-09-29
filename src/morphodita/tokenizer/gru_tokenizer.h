@@ -26,6 +26,7 @@ class gru_tokenizer : public unicode_tokenizer {
 
  private:
   inline bool is_space(size_t index);
+  inline bool is_ucat(size_t index, unilib::unicode::category_t cat);
   int next_outcome();
 
   unsigned segment;
