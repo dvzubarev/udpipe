@@ -101,8 +101,8 @@ int gru_tokenizer::next_outcome() {
       }
       //also fix possible trailing or leading hyphens
       if (i>0 && is_ucat(network_offsets[i], unilib::unicode::Pd) &&
-          is_ucat(network_offsets[i-1], unilib::unicode::Ll | unilib::unicode::Lu) &&
-          is_ucat(network_offsets[i+1], unilib::unicode::Ll | unilib::unicode::Lu)){
+          is_ucat(network_offsets[i-1], unilib::unicode::Ll | unilib::unicode::Lu | unilib::unicode::Nd) &&
+          is_ucat(network_offsets[i+1], unilib::unicode::Ll | unilib::unicode::Lu | unilib::unicode::Nd)){
 
         //trailing hyphen
         if (network_outcomes[i].outcome == gru_tokenizer_network::END_OF_TOKEN &&
