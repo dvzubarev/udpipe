@@ -20,6 +20,12 @@ bool gru_tokenizer::is_space(size_t index) {
 bool gru_tokenizer::is_ucat(size_t index, unilib::unicode::category_t cat){
   return chars[index].cat & cat;
 }
+
+bool gru_tokenizer::fix_trailing_issues(size_t index){
+  return is_ucat(index, unilib::unicode::Pd) or
+    chars[index].chr == '/';
+}
+
 bool gru_tokenizer::next_sentence(vector<token_range>& tokens) {
   tokens.clear();
 
@@ -100,7 +106,7 @@ int gru_tokenizer::next_outcome() {
             network_outcomes[i].outcome = gru_tokenizer_network::END_OF_TOKEN;
       }
       //also fix possible trailing or leading hyphens
-      if (i>0 && is_ucat(network_offsets[i], unilib::unicode::Pd) &&
+      if (i>0 && fix_trailing_issues(network_offsets[i]) &&
           is_ucat(network_offsets[i-1], unilib::unicode::Ll | unilib::unicode::Lu | unilib::unicode::Nd) &&
           is_ucat(network_offsets[i+1], unilib::unicode::Ll | unilib::unicode::Lu | unilib::unicode::Nd)){
 
